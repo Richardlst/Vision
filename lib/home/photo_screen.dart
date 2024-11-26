@@ -9,7 +9,7 @@ class PhotoScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
 
 
-  PhotoScreen(this.cameras);
+  const PhotoScreen(this.cameras, {super.key});
 
   @override
   State<PhotoScreen> createState() => _PhotoScreenState();
@@ -31,7 +31,7 @@ class _PhotoScreenState extends State<PhotoScreen> {
   Offset? _focusPoint;
 
 //For Zoom
-  double _currentZoom = 1.0;
+  final double _currentZoom = 1.0;
   File? _capturedImage;
 
   @override
