@@ -2,15 +2,13 @@ import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart' as pathProvider;
-
+import 'package:tflite_flutter/tflite_flutter.dart';
 class PhotoScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-
-
   const PhotoScreen(this.cameras, {super.key});
-
   @override
   State<PhotoScreen> createState() => _PhotoScreenState();
 }
@@ -19,7 +17,7 @@ class _PhotoScreenState extends State<PhotoScreen> {
   late CameraController controller;
   late AudioPlayer _audioPlayer;
   bool isCapturing = false;
-
+  late Interpreter interpreter;
 //For switching Camera
   int selectedCameraIndex = 0;
   bool isFrontCamera = false;
@@ -38,6 +36,7 @@ class _PhotoScreenState extends State<PhotoScreen> {
   void initState() {
     super.initState();
     _audioPlayer= AudioPlayer();
+    _loadModel();
     controller = CameraController(widget.cameras[0], ResolutionPreset.max);
     controller.initialize().then((_) {
       if (!mounted) {
@@ -45,6 +44,15 @@ class _PhotoScreenState extends State<PhotoScreen> {
       }
       setState(() {});
     });
+  }
+
+  Future<void> _loadModel() async {
+    try {
+      final interpreter = await Interpreter.fromAsset('assets/yolov8n.tflite');
+      print('Model loaded successfully');
+    } catch (e) {
+      print('Error loading model: $e');
+    }
   }
 
   @override
@@ -82,16 +90,18 @@ class _PhotoScreenState extends State<PhotoScreen> {
         isCapturing = true;
       });
       // Play a sound
-      _audioPlayer.setAsset('C:/Users/thinh/AndroidStudioProjects/thu4/assets/Am_thanh_chup_Anh.mp3');
+      _audioPlayer.setAsset('assets/Am_thanh_chup_Anh.mp3');
       _audioPlayer.play();
       // Capture image
       final XFile capturedImage = await controller.takePicture();
-      // String imagePath = capturedImage.path;
-      // await GallerySaver.saveImage(imagePath);
-      // Success announcement
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   SnackBar(content: Text("Photo is saved to the gallery")),
-      // );
+      final File imageFile = File(capturedImage.path);
+      final img.Image image = img.decodeImage(await imageFile.readAsBytes())!;
+      final img.Image resizedImage = img.copyResize(image, width: 416, height: 416);
+      final input = _preprocessImage(resizedImage);
+      final output = List.generate(1, (_) => List.filled(10, 0.0));
+      interpreter.run(input, output);
+      print('Model Output: $output');
+      _showResult(output[0]);
     } catch(e){
       print("Error capturing photo: $e");
     } finally{
@@ -99,6 +109,45 @@ class _PhotoScreenState extends State<PhotoScreen> {
         isCapturing=false;
       });
     }
+  }
+  List<List<List<double>>> _preprocessImage(img.Image image) {
+    final input = List.generate(
+      1,
+          (_) => List.generate(
+        416,
+            (_) => List.generate(
+          416,
+              (_) => 0.0,
+        ),
+      ),
+    );
+
+    for (int y = 0; y < 416; y++) {
+      for (int x = 0; x < 416; x++) {
+        final pixel = image.getPixel(x, y);
+        // input[0][y][x] = img.getRed(pixel) / 255.0;
+      }
+    }
+
+    return input;
+  }
+
+  void _showResult(List<double> output) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Prediction Results'),
+          content: Text(output.toString()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
   @override
   Widget build(BuildContext context) {

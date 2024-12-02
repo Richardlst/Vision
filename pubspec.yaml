@@ -46,6 +46,7 @@ dependencies:
   video_player: ^2.6.1
   image_picker: ^1.1.2
   image: ^4.3.0
+  tflite_flutter: ^0.10.3
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -69,6 +70,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets\Am_thanh_chup_Anh.mp3
+    - assets\yolov8n.tflite
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
