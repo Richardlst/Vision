@@ -1,11 +1,19 @@
 import 'dart:io';
+import 'dart:io' as io;
 import 'package:just_audio/just_audio.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart' as pathProvider;
+import 'package:tflite/tflite.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:ultralytics_yolo/ultralytics_yolo.dart';
+import 'package:ultralytics_yolo/yolo_model.dart';
 class PhotoScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
   const PhotoScreen(this.cameras, {super.key});
@@ -18,6 +26,7 @@ class _PhotoScreenState extends State<PhotoScreen> {
   late AudioPlayer _audioPlayer;
   bool isCapturing = false;
   late Interpreter interpreter;
+  late ObjectDetector _objectDetector;
 //For switching Camera
   int selectedCameraIndex = 0;
   bool isFrontCamera = false;
@@ -35,8 +44,14 @@ class _PhotoScreenState extends State<PhotoScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsFlutterBinding.ensureInitialized();
     _audioPlayer= AudioPlayer();
     _loadModel();
+    _initObjectDetectorWithLocalModel().then((detector) {
+      setState(() {
+        _objectDetector = detector; // Lưu detector vào biến
+      });
+    });
     controller = CameraController(widget.cameras[0], ResolutionPreset.max);
     controller.initialize().then((_) {
       if (!mounted) {
@@ -48,7 +63,12 @@ class _PhotoScreenState extends State<PhotoScreen> {
 
   Future<void> _loadModel() async {
     try {
-      final interpreter = await Interpreter.fromAsset('assets/yolov8n.tflite');
+      interpreter = await Interpreter.fromAsset('assets/yolo11n_float32.tflite');
+      // await Tflite.loadModel(
+      //   model: "assets/object_labeler.tflite"
+      // );
+      // var options = InterpreterOptions()..addDelegate(FlexDelegate());
+      // final interpreter = await Interpreter.fromAsset('assets/yolov8n.tflite', options: options);
       print('Model loaded successfully');
     } catch (e) {
       print('Error loading model: $e');
@@ -56,9 +76,10 @@ class _PhotoScreenState extends State<PhotoScreen> {
   }
 
   @override
-  void dispose() {
+  void dispose() async {
     _audioPlayer.dispose();
     controller.dispose();
+    await Tflite.close();
     super.dispose();
   }
 
@@ -101,7 +122,6 @@ class _PhotoScreenState extends State<PhotoScreen> {
       final output = List.generate(1, (_) => List.filled(10, 0.0));
       interpreter.run(input, output);
       print('Model Output: $output');
-      _showResult(output[0]);
     } catch(e){
       print("Error capturing photo: $e");
     } finally{
@@ -131,24 +151,40 @@ class _PhotoScreenState extends State<PhotoScreen> {
 
     return input;
   }
-
-  void _showResult(List<double> output) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Prediction Results'),
-          content: Text(output.toString()),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Close'),
-            ),
-          ],
-        );
-      },
+  Future<ImageClassifier> _initImageClassifierWithLocalModel() async {
+    final modelPath = await _copy('assets/yolo11n_float32.tflite');
+    final model = LocalYoloModel(
+      id: '',
+      task: Task.classify,
+      format: Format.coreml,
+      modelPath: modelPath,
     );
+    return ImageClassifier(model: model);
   }
+
+  Future<String> _copy(String assetPath) async {
+    final path = '${(await getApplicationSupportDirectory()).path}/$assetPath';
+    await io.Directory(dirname(path)).create(recursive: true);
+    final file = io.File(path);
+    if (!await file.exists()) {
+      final byteData = await rootBundle.load(assetPath);
+      await file.writeAsBytes(byteData.buffer
+          .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+    }
+    return file.path;
+  }
+
+  Future<ObjectDetector> _initObjectDetectorWithLocalModel() async {
+    final modelPath = await _copy('assets/yolo11n_float32.tflite');
+    final model = LocalYoloModel(
+      id: '',
+      task: Task.detect,
+      format: Format.tflite,
+      modelPath: modelPath,
+    );
+    return ObjectDetector(model: model);
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
